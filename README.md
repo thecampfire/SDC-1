@@ -1,56 +1,55 @@
-# **Finding Lane Lines on the Road** 
-[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
 
-<img src="examples/laneLines_thirdPass.jpg" width="480" alt="Combined Image" />
+**Finding Lane Lines on the Road**
 
-Overview
+The goals / steps of this project are the following:
+* Make a pipeline that finds lane lines on the road
+* Reflect on your work in a written report
+
+
+[//]: # (Image References)
+
+[image1]: ./test_images_output/color-2.jpg "Color Mask"
+[image2]: ./test_images_output/1.jpg "Lane Lines"
+[image3]: ./test_images_output/otsu.jpg "Otsu Thresholding"
+
 ---
 
-When we drive, we use our eyes to decide where to go.  The lines on the road that show us where the lanes are act as our constant reference for where to steer the vehicle.  Naturally, one of the first things we would like to do in developing a self-driving car is to automatically detect lane lines using an algorithm.
+### Reflection
 
-In this project you will detect lane lines in images using Python and OpenCV.  OpenCV means "Open-Source Computer Vision", which is a package that has many useful tools for analyzing images.  
+### 1. Describe your pipeline. As part of the description, explain how you modified the draw_lines() function.
 
-To complete the project, two files will be submitted: a file containing project code and a file containing a brief write up explaining your solution. We have included template files to be used both for the [code](https://github.com/udacity/CarND-LaneLines-P1/blob/master/P1.ipynb) and the [writeup](https://github.com/udacity/CarND-LaneLines-P1/blob/master/writeup_template.md).The code file is called P1.ipynb and the writeup template is writeup_template.md 
-
-To meet specifications in the project, take a look at the requirements in the [project rubric](https://review.udacity.com/#!/rubrics/322/view)
-
-
-Creating a Great Writeup
----
-For this project, a great writeup should provide a detailed response to the "Reflection" section of the [project rubric](https://review.udacity.com/#!/rubrics/322/view). There are three parts to the reflection:
-
-1. Describe the pipeline
-
-2. Identify any shortcomings
-
-3. Suggest possible improvements
-
-We encourage using images in your writeup to demonstrate how your pipeline works.  
-
-All that said, please be concise!  We're not looking for you to write a book here: just a brief description.
-
-You're not required to use markdown for your writeup.  If you use another method please just submit a pdf of your writeup. Here is a link to a [writeup template file](https://github.com/udacity/CarND-LaneLines-P1/blob/master/writeup_template.md). 
+For this project I started off using the pipeline provided in the lesson. That seemed to work at first but severely broke down on the second video, with the yellow left lane line. I started making small improvements to the pipeline and this is what I ended up with:
+* First, I mask everything other than yellow and white colors, which leaves lane lines in the picture and excludes almost everything else. This provides a high-contrast environment that's better for edge detection
+![Color Mask][image1]
+* I then apply greyscale but since this didn't provide good enough results, I did further Otsu thresholding in order to decrease the number of color values and increase contrast
+![Otsu Thresholding][image3]
+* After edge detection, I created a region of interest mask. Again, I found better results by splitting the mask in two different trapezoid shapes, one for the left lane and one for the right lane.
+* I ran Hough for the left lane and for the right lane separately and then did a weighted image average of the left side image and the right side image.
 
 
-The Project
----
+For draw_lines the initial steps were as follows:
+* I first compute the slope of each line
+* If the slope is negative, that means the points should belong on the left lane, so I append them to a list of left side points
+* I use fitLine to extrapolate the lines to a single one for the left lane and a single one for the right lane
+* I use the result to compute the slope and intercept for the left and right lines to be drawn
+* I then draw the line using the same end points I used for the region of interest masking.
 
-## If you have already installed the [CarND Term1 Starter Kit](https://github.com/udacity/CarND-Term1-Starter-Kit/blob/master/README.md) you should be good to go!   If not, you should install the starter kit to get started on this project. ##
+This approach did OK for the first 2 videos but performed very poorly on the challenge video
 
-**Step 1:** Set up the [CarND Term1 Starter Kit](https://classroom.udacity.com/nanodegrees/nd013/parts/fbf77062-5703-404e-b60c-95b78b2f3f9e/modules/83ec35ee-1e02-48a5-bdb7-d244bd47c2dc/lessons/8c82408b-a217-4d09-b81d-1bda4c6380ef/concepts/4f1870e0-3849-43e4-b670-12e6f2d4b7a7) if you haven't already.
+I realized that within a few sequential frames (let's say over 1 second, so around 30 frames), the lane line slope will not change that much. I created a list of the slopes for the past few frames and did an average over them. I then add the current slope to the average. If the slope deviates too much from the average, I don't add those points to the list of points that I fit a line to. If the slope is close enough to the average, I add the points and then do the fitLine.
+I then draw the line for the lane based on the average slope and intercept. This way, once the line has locked into position on top of the lane, it does change its slope based on new information but to a lesser extent, so the variation is dampened quite a bit.  
 
-**Step 2:** Open the code in a Jupyter Notebook
+This is what the final output looks like:
+![Detected Lanes][image2]
 
-You will complete the project code in a Jupyter notebook.  If you are unfamiliar with Jupyter Notebooks, check out <A HREF="https://www.packtpub.com/books/content/basics-jupyter-notebook-and-python" target="_blank">Cyrille Rossant's Basics of Jupyter Notebook and Python</A> to get started.
 
-Jupyter is an Ipython notebook where you can run blocks of code and see results interactively.  All the code for this project is contained in a Jupyter notebook. To start Jupyter in your browser, use terminal to navigate to your project directory and then run the following command at the terminal prompt (be sure you've activated your Python 3 carnd-term1 environment as described in the [CarND Term1 Starter Kit](https://github.com/udacity/CarND-Term1-Starter-Kit/blob/master/README.md) installation instructions!):
+### 2. Identify potential shortcomings with your current pipeline
 
-`> jupyter notebook`
+On a winding road with many turns, my approach would probably not change the average slope by enough, fast enough, to keeped being locked onto the lane line.
 
-A browser window will appear showing the contents of the current directory.  Click on the file called "P1.ipynb".  Another browser window will appear displaying the notebook.  Follow the instructions in the notebook to complete the project.  
+This approach also works well when the line segments detected within the lane lines are pretty sizable. On a section of the road where the lane line is covered by dirt or the paint has worn off, leaving smudges and very short segments, my approach would probably not detect a line at all.
 
-**Step 3:** Complete the project and submit both the Ipython notebook and the project writeup
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+### 3. Suggest possible improvements to your pipeline
 
+One possible improvement would be to tweak the parameters related to the previous line history. Keeping track of more, or fewer past frames, changing how much the average can deviate, all these could potentially improve the result.
